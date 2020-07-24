@@ -23,16 +23,19 @@ class LinUCB:
         self.UNKNOWN_RATING_VAL = 0
         self.POSITIVE_RATING_VAL = 1
         self.NEGATIVE_RATING_VAL = -1
-        
-
             
         
-        self.type="all_intents"
+        self.type="sampling"
         
         if self.type=="all_intents":
             self.num_articles=321         # number of queries
             self.arm_feature_dim=1764   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
             self.num_queries=996         # number of articles
+            
+        elif self.type=="sampling":
+            self.num_articles=50         # number of queries
+            self.arm_feature_dim=990   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
+            self.num_queries=222         # number of articles
             
         else:
             self.num_articles=25         # number of queries
@@ -45,6 +48,8 @@ class LinUCB:
         
         if self.type=="allintents":
             ratings = pickle.load(open('./data/all_question_article_ratings.pkl','rb'))
+        elif self.type=="sampling":    
+            ratings = pickle.load(open('./data/sample_questions_article_ratings.pkl','rb'))
         else:    
             ratings = pickle.load(open('./data/question_article_ratings.pkl','rb'))
             
@@ -236,6 +241,26 @@ class LinUCB:
                 else:
                     features[v,:]=question_features[k]
                     
+        elif self.type=="sampling":   
+            question_id = pickle.load(open('data/sample_questions_dict.pkl','rb'))
+            question_features = pickle.load(open('data/sample_questions_title.pkl','rb'))
+            
+            features = np.zeros(shape=(self.num_queries, 768), dtype=float)
+            titles = np.empty(shape=(self.num_queries,), dtype=object)
+            
+            for k,v in question_id.items():
+                #k is the question text,  v is the incremental ID
+                titles[v]=k
+
+                # average multiple sentences 
+                # print(question_features[k].shape[0],question_features[k].shape[1])
+                #print(question_features[k].shape)
+                
+                if (question_features[k].shape[0]!=768):
+                    features[v,:]=np.average(question_features[k],axis=0)
+                else:
+                    features[v,:]=question_features[k]
+            
         else:   # for all intents     
             
             question_id = pickle.load(open('data/all_questions_dict.pkl','rb'))
@@ -321,11 +346,17 @@ class LinUCB:
         no_queries = self.R.shape[0]
         
         
+        
         ids = np.random.randint(no_queries, size=num_to_each_query)
         
         for i in ids:
-            self.R[i] = np.zeros((1,self.num_articles))
-
+            for j in range(no_aricles):
+                if (self.R[i,j]==1):
+                    self.R[i,j]=0
+                    break
+            
+        
+        
         return self.R        
     
     

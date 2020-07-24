@@ -186,6 +186,20 @@ class MovieLens:
         # arm_feature_dims = item_features.shape[1] + user_features.shape[0]
         arm_features = np.concatenate((user_features, item_features), axis=1)
         return arm_features
+    
+    def get_features_of_oos_arm(self, t, item_feature):
+        """
+        Concatenates item features with user features.
+        :param t: Time step = index of user that is being recommended to.
+        :return: Matrix of (#arms x #feature_dims) for user t.
+        """
+        t = t % self.num_users
+        user_features = self.R[t]  # vector
+        # arm_feature_dims = item_features.shape[1] + user_features.shape[0]
+        print(user_features)
+        print(item_feature)
+        arm_features = np.concatenate((user_features, item_feature), axis=0)
+        return arm_features    
 
     def get_arm_feature_dim(self):
         return self.item_genres.shape[1] + self.R.shape[1]

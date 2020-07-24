@@ -2,11 +2,12 @@ from _commons import warn, error, create_dir_path
 import numpy as np
 import time
 from movielens import MovieLens
+from sklearn import metrics
+import copy 
 
 
 class LinUCB:
-    def __init__(self, alpha, dataset=None, max_items=500, allow_selecting_known_arms=True, fixed_rewards=True,
-                 prob_reward_p=0.9):
+    def __init__(self, alpha, dataset=None, max_items=500, allow_selecting_known_arms=True, fixed_rewards=True, prob_reward_p=0.9):
         if dataset is None:
             self.dataset = MovieLens(variant='ml-100k',
                                      pos_rating_threshold=4,
@@ -15,6 +16,7 @@ class LinUCB:
             self.dataset = dataset
         self.dataset.shrink(max_items)
         self.dataset.add_random_ratings(num_to_each_user=3)
+        self.dataset.oldR = copy.deepcopy(self.dataset.R)
         self.alpha = alpha
         self.fixed_rewards = fixed_rewards
         self.prob_reward_p = prob_reward_p
@@ -23,6 +25,9 @@ class LinUCB:
         self.allow_selecting_known_arms = allow_selecting_known_arms
         self.d = self.dataset.arm_feature_dim
         self.b = np.zeros(shape=(self.dataset.num_items, self.d))
+        #self.b = np.random.uniform(0,0.5,size=(self.dataset.num_items, self.d))
+        
+        self.allscores = np.zeros(shape=(self.dataset.num_users, self.dataset.num_items))
 
         # More efficient way to create array of identity matrices of length num_items
         print("\nInitializing matrix A of shape {} which will require {}MB of memory."
@@ -108,7 +113,11 @@ class LinUCB:
 
         total_time = time.time() - start_time
         avg_reward = np.average(np.array(rewards))
-        return avg_reward, total_time
+        allscores = self.calculate_auc()
+        
+        print(allscores)
+        
+        return avg_reward, allscores, total_time
 
     def run(self, num_epochs, verbosity=1):
         """
@@ -118,10 +127,64 @@ class LinUCB:
         """
         self.users_with_unrated_items = np.array(range(self.dataset.num_users))
         avg_rewards = np.zeros(shape=(num_epochs,), dtype=float)
+        avg_aucs = np.zeros(shape=(num_epochs,), dtype=float)
+        
         for i in range(num_epochs):
-            avg_rewards[i], total_time = self.run_epoch(verbosity)
+            avg_rewards[i], avg_aucs[i], total_time = self.run_epoch(verbosity)
 
             if verbosity >= 1:
                 print(
-                    "Finished epoch {}/{} with avg reward {} in {}s".format(i, num_epochs, avg_rewards[i], total_time))
-        return avg_rewards
+                    "Finished epoch {}/{} with avg reward {} and auc {} in {}s".format(i, num_epochs, avg_rewards[i], avg_aucs[i], total_time))
+        return avg_rewards, avg_aucs, total_time
+    
+    def print_theta(self):
+        A = self.A
+        b = self.b 
+        
+        item_ids = range(self.dataset.num_items)
+        
+        for j in item_ids:
+            
+            A_a_inv = np.linalg.inv(A[j])
+            theta_a = A_a_inv.dot(b[j])
+            print('Theta '+ str(j) + ' ' + str(theta_a))
+                
+    def calculate_auc(self):
+        A = self.A
+        b = self.b        
+        
+        user_ids = range(self.dataset.num_users)
+        item_ids = range(self.dataset.num_items)
+        
+        allscores=np.zeros((self.dataset.num_users,self.dataset.num_items))
+        
+
+        for i in user_ids:
+            for j in item_ids:
+                # get the arm features given page id, and a query embeddings
+                # though here I all queries are insample, I still use this out-of-sample arm function so it 
+                # can be applied on held-out query data sets for validation in the future
+                arm_features = self.dataset.get_features_of_oos_arm(i, item_feature=self.dataset.item_genres[j])
+                x_ta = arm_features.reshape(-1, 1)  # make a column vector
+                
+                A_a_inv = np.linalg.inv(A[j])
+                theta_a = A_a_inv.dot(b[j])
+                score_a = theta_a.T.dot(x_ta)
+                #print(i,j,score_a)
+                
+                allscores[i,j]=score_a
+            
+        
+        truelabels = copy.deepcopy(self.dataset.oldR.T)
+        truelabels[truelabels<-0.5]=0
+#         print(allscores)
+#         print(truelabels)
+        
+#         try:
+        s = metrics.roc_auc_score(truelabels, allscores.T, average='micro')
+#         except Exception as inst:
+#             s = 99
+#             pass
+        
+        return s
+        #return allscores

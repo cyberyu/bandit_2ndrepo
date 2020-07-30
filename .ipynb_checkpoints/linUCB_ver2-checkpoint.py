@@ -32,13 +32,13 @@ class LinUCB:
             self.num_queries=996         # number of articles
             
         elif self.type=="sampling":
-            self.num_articles=10         # number of queries
-            self.arm_feature_dim=818   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
-            self.num_queries=50         # number of articles
+            self.num_articles=19         # number of queries
+            self.arm_feature_dim=787   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
+            self.num_queries=30         # number of articles
             
         else:
             self.num_articles=25         # number of queries
-            self.arm_feature_dim=809   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
+            self.arm_feature_dim=793   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
             self.num_queries=41         # number of articles
 
         #dataarray = pickle.load(open('dataarray.pkl','rb'))
@@ -48,7 +48,7 @@ class LinUCB:
         if self.type=="allintents":
             ratings = pickle.load(open('./data/all_question_article_ratings.pkl','rb'))
         elif self.type=="sampling":    
-            ratings = pickle.load(open('./data/sample_by_question_questions_article_ratings.pkl','rb'))
+            ratings = pickle.load(open('./data/sample_by_page_questions_article_ratings.pkl','rb'))
         else:    
             ratings = pickle.load(open('./data/question_article_ratings.pkl','rb'))
             
@@ -56,23 +56,26 @@ class LinUCB:
             self.R[i,j]=1
         
         self.oldR = copy.deepcopy(self.R)
-        self.users_with_unrated_items = np.array(range(self.num_queries))  # number of unrated items. here is probably wrong
+        self.users_with_unrated_items = np.array(range(self.num_articles))  # number of unrated items.
+        
         self.monitored_user = np.random.choice(self.users_with_unrated_items)
+        
         self.allow_selecting_known_arms = allow_selecting_known_arms
         self.d = self.arm_feature_dim
         self.b = np.zeros(shape=(self.num_queries, self.d))
-        self.query_titles, self.query_embeddings =self._get_query_info()
-#         self.article_titles, self.article_pca =self._get_article_info()
+        # self.query_titles, self.query_embeddings =self._get_query_info()
+        self.article_titles, self.article_embeddings =self._get_article_info()
 
         # More efficient way to create array of identity matrices of length num_items
         print("\nInitializing matrix A of shape {} which will require {}MB of memory."
-              .format((self.num_queries, self.d, self.d), 8 * self.num_queries * self.d * self.d / 1e6))
-        self.A = np.repeat(np.identity(self.d, dtype=float)[np.newaxis, :, :], self.num_queries, axis=0)
+              .format((self.num_articles, self.d, self.d), 8 * self.num_articles * self.d * self.d / 1e6))
+        self.A = np.repeat(np.identity(self.d, dtype=float)[np.newaxis, :, :], self.num_articles, axis=0)
         #(50, 818, 818) queries, fd, fd
         print("\nLinUCB successfully initialized.")
 
-    #  input para (article_id, unknown_query_ids, verbosity)
-    def choose_arm(self, t, unknown_query_ids, verbosity):
+    
+    #  input para (query_id, unknown_article_ids, verbosity)
+    def choose_arm(self, t, unknown_article_ids, verbosity):
         """
         Choose an arm to pull = query to matched to infowavepage t that it has not been matched yet.
         :param t: page_id for queries to matched to.
@@ -81,17 +84,16 @@ class LinUCB:
         """
         A = self.A
         b = self.b
-        
         arm_features = self.get_features_of_current_arms(t=t)
         p_t = np.zeros(shape=(arm_features.shape[0],), dtype=float)
         p_t -= 9999  # I never want to select the already rated items
-        query_ids = unknown_query_ids
+        page_ids = unknown_article_ids
 
         if self.allow_selecting_known_arms:
-            query_ids = range(self.num_queries)
+            page_ids = range(self.num_articles)
             p_t += 9999
 
-        for a in query_ids:  # iterate over all arms
+        for a in page_ids:  # iterate over all arms
             x_ta = arm_features[a].reshape(arm_features[a].shape[0], 1)  # make a column vector
             A_a_inv = np.linalg.inv(A[a])
             theta_a = A_a_inv.dot(b[a])
@@ -107,7 +109,7 @@ class LinUCB:
         a_t = np.random.choice(max_idxs)  # idx of article to recommend to query t
 
         # observed reward = 1/0
-        r_t = self.recommend(query_id=a_t, page_id=t, fixed_rewards=self.fixed_rewards, prob_reward_p=self.prob_reward_p)
+        r_t = self.recommend(query_id=t, page_id=a_t, fixed_rewards=self.fixed_rewards, prob_reward_p=self.prob_reward_p)
 
         if verbosity >= 2:
             print("Query {} choosing item {} with p_t={} reward {}".format(t, a_t, p_t[a_t], r_t))
@@ -157,32 +159,29 @@ class LinUCB:
     
     def run_epoch(self, verbosity=2):
         """
-        Call choose_arm() for each article in the dataset.
+        Call choose_arm() for each queries in the dataset.
         :return: Average received reward.
         """
         rewards = []
         start_time = time.time()
 
-        for i in range(self.num_articles):
-            
-            
-            #print('article id is '+ str(i))
+        for i in range(self.num_queries):
             start_time_i = time.time()
             #user_id = self.get_next_user()
-            article_id = i
-            unknown_query_ids = self.get_uknown_queries_of_page(article_id)
+            query_id = i
+            unknown_page_ids = self.get_uknown_pages_of_query(query_id)
 
             if self.allow_selecting_known_arms == False:
-                if article_id not in self.articles_with_unmatched_queries:
+                if query_id not in self.queries_with_unmatched_pages:
                     continue
 
-                if unknown_query_ids.size == 0:
-                    print("Page {} has no more unknown query matchings, skipping it.".format(article_id))
-                    self.articles_with_unmatched_queries = self.articles_with_unmatched_queries[
-                        self.articles_with_unmatched_queries != article_id]
+                if unknown_page_ids.size > 0:
+                    print("Query {} has no more unknown page matchings, skipping it.".format(query_id))
+                    self.queries_with_unmatched_pages = self.queries_with_unmatched_pages[
+                        self.articles_with_unmatched_queries != query_id]
                     continue
 
-            rewards.append(self.choose_arm(article_id, unknown_query_ids, verbosity))
+            rewards.append(self.choose_arm(query_id, unknown_page_ids, verbosity))
             time_i = time.time() - start_time_i
             if verbosity >= 2:
                 print("Choosing arm for query {}/{} ended with reward {} in {}s".format(i, self.num_queries,
@@ -211,12 +210,15 @@ class LinUCB:
                     "Finished epoch {}/{} with avg reward {}, auc score {} in {}s".format(i, num_epochs, avg_rewards[i], auc_scores[i], total_time))
         return avg_rewards, auc_scores
 
+    def get_uknown_pages_of_query(self, query_id):
+        page_ratings = self.R[query_id]  # vector
+        unknown_page_ids = np.argwhere(page_ratings == self.UNKNOWN_RATING_VAL).flatten()
+        return unknown_page_ids  
+    
     def get_uknown_queries_of_page(self, article_id):
-        
         query_ratings = self.R[:,article_id]  # vector
         unknown_query_ids = np.argwhere(query_ratings == self.UNKNOWN_RATING_VAL).flatten()
-        return unknown_query_ids    
-    
+        return unknown_query_ids      
     
     def get_features_of_current_arms(self, t):
         """
@@ -224,35 +226,68 @@ class LinUCB:
         :param t: Time step = index of user that is being recommended to.
         :return: Matrix of (#arms x #feature_dims) for user t.
         """
-        # in the original settings, an arm is the article, recommendation is from article to user
-        # so in this get arm function, it originally concatenate a single user_feature (rating vector) with multiple article features (genre vectors)
         
-        # in our settings, an arm is the query, because I am thinking page is somewhat static, so we are recommendating queries to pages. Page is a user role
+        # in our settings, we consider query like users, so we are recommendating infowave pages to queries. Page is a user role
         # so for our get arm function, it should concatenate a single page_feature (historical clicks of queries) with queries features (embeddings)
         t = t % self.num_queries
         
 #         article_features = self.R[t]   # rating of No.t article x all users
 #         article_features = np.tile(article_features, (self.num_queries, 1))
-        query_features = self.query_embeddings
-        article_features=self.R[:,t].T
-        article_features = np.tile(article_features, (self.num_queries, 1))
+
+        article_features = self.article_embeddings
+        query_features=self.R[t,:]
+        query_features = np.tile(query_features, (self.num_articles, 1))
         arm_features = np.concatenate((query_features, article_features), axis=1)
         return arm_features    
     
-    def get_featuers_of_new_arms_oos(self, t, new_query_embeddings):
+    def _get_article_info(self):
+        
+        if self.type=='1st_intent':
+            page_id = pickle.load(open('data/infowave_25_1stintent_dict.pkl','rb'))
+            page_features = pickle.load(open('data/infowave_25_1stintent_title.pkl','rb'))
+
+            features = np.zeros(shape=(self.num_articles, 768), dtype=float)
+            titles = np.empty(shape=(self.num_queries,), dtype=object)
+
+            for k,v in page_id.items():
+                titles[v]=k
+
+                # average multiple sentences 
+                # print(question_features[k].shape[0],question_features[k].shape[1])
+                if (page_features[k].shape[0]!=1) & (page_features[k].shape[1]==768):
+                    features[v,:]=np.average(page_features[k],axis=0)
+                else:
+                    features[v,:]=page_features[k]    
+                    
+        else: 
+        #self.type=="sampling":
+            page_id = pickle.load(open('data/sample_by_page_page_dict.pkl','rb'))
+            page_features = pickle.load(open('data/sample_by_page_page_features.pkl','rb'))            
+            
+            features = np.zeros(shape=(self.num_articles, 768), dtype=float)
+            titles = np.empty(shape=(self.num_queries,), dtype=object)
+            
+            for k,v in page_id.items():
+                titles[v]=k
+
+                # average multiple sentences 
+                # print(question_features[k].shape[0],question_features[k].shape[1])
+                if (page_features[k].shape[0]!=1) & (page_features[k].shape[1]==768):
+                    features[v,:]=np.average(page_features[k],axis=0)
+                else:
+                    features[v,:]=page_features[k]    
+                    
+                    
+        return titles, features    
+    
+
+    def get_featuers_of_new_arms_oos(self, t, new_article_embeddings):
         # this function create an arm feature vector for an out-of-sample query
-        # it concatenate the new query embeddings (query features) with the ratings (click vecotr) of a page w.r.t. all in-sample queries
-        article_features=self.R[:,t].T
-        arm_features = np.concatenate((new_query_embeddings, article_features), axis=0)
+        # it concatenate the new aricle embeddings (page features) with the ratings (click-thru vector) of a query w.r.t. all in-sample queries
+        query_features=self.R[t,:]
+        arm_features = np.concatenate((query_features, new_article_embeddings), axis=0)
         return arm_features
         
-    def _get_page_info(self):
-        
-        page_id = pickle.load(open('',''))
-        article_features = pickle.load(open('',''))
-
-        features = np.zeros(shape=(self.num_queries, 768), dtype=float)
-        titles = np.empty(shape=(self.num_queries,), dtype=object)
         
     def _get_query_info(self):
         
@@ -274,8 +309,8 @@ class LinUCB:
                     features[v,:]=question_features[k]
                     
         elif self.type=="sampling":   
-            question_id = pickle.load(open('data/sample_by_question_questions_dict.pkl','rb'))
-            question_features = pickle.load(open('data/sample_by_question_questions_features.pkl','rb'))
+            question_id = pickle.load(open('data/sample_questions_dict.pkl','rb'))
+            question_features = pickle.load(open('data/sample_questions_title.pkl','rb'))
             
             features = np.zeros(shape=(self.num_queries, 768), dtype=float)
             titles = np.empty(shape=(self.num_queries,), dtype=object)
@@ -324,8 +359,7 @@ class LinUCB:
         :return: Reward = either 0 or 1.
         """
         MIN_PROBABILITY = 0 # Minimal probability to like an item - adds stochasticity
-#         print('query_id' + str(query_id))
-#         print('page_id' + str(page_id))
+
         if self.R[query_id, page_id] == self.POSITIVE_RATING_VAL:
             if fixed_rewards:
                 return 1
@@ -334,22 +368,22 @@ class LinUCB:
         else:
             
             # the goal is to update a missing ""
-            current_query_features = self.query_embeddings[query_id]  #get the features
+            current_page_features = self.article_embeddings[page_id]  #get the article features
             
             
-            # find out for an article, what others questions are rated relevant
-            article_ratings = self.R[:,page_id]  #get all ratings by article id, it is a column
-            query_pos_rat_idxs = np.argwhere(article_ratings == self.POSITIVE_RATING_VAL).flatten() # get all other positive ratings of the same article
-            num_known_ratings = len(query_pos_rat_idxs)  # length of all other positive ratings
+            # find out for a query, what page is rated as relevant (which for new query should be none)
+            query_ratings = self.R[query_id,:]  #get all ratings by article id, it is a column
+            article_pos_rat_idxs = np.argwhere(query_ratings == self.POSITIVE_RATING_VAL).flatten() # get all other positive ratings of the same article
+            num_known_ratings = len(article_pos_rat_idxs)  # length of all other positive ratings
             
             genre_likabilities = []
             
             
-            for query_idx in query_pos_rat_idxs:
+            for article_idx in article_pos_rat_idxs:
                 # calculate the similarty between query
 #                 print(current_query_features.shape)
 #                 print(self.query_embeddings[query_idx].shape)
-                genre_likabilities.append(cosine_similarity(current_query_features.reshape(-1,1), self.query_embeddings[query_idx].reshape(-1,1)))
+                genre_likabilities.append(cosine_similarity(current_page_features.reshape(-1,1), self.article_embeddings[article_idx].reshape(-1,1)))
             
             
             result_genre_likability = np.average(genre_likabilities)
@@ -405,7 +439,7 @@ class LinUCB:
                 # get the arm features given page id, and a query embeddings
                 # though here I all queries are insample, I still use this out-of-sample arm function so it 
                 # can be applied on held-out query data sets for validation in the future
-                arm_features = self.get_featuers_of_new_arms_oos(j, new_query_embeddings=self.query_embeddings[i])
+                arm_features = self.get_featuers_of_new_arms_oos(i, new_article_embeddings=self.article_embeddings[j])
                 x_ta = arm_features.reshape(-1, 1)  # make a column vector
                 
                 A_a_inv = np.linalg.inv(A[j])

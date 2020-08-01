@@ -237,6 +237,8 @@ class LinUCB:
         article_features=self.R[:,t].T
         article_features = np.tile(article_features, (self.num_queries, 1))
         arm_features = np.concatenate((query_features, article_features), axis=1)
+        print(arm_features.shape)
+        print(article_features.shape)
         return arm_features    
     
     def get_featuers_of_new_arms_oos(self, t, new_query_embeddings):
@@ -354,7 +356,7 @@ class LinUCB:
             
             result_genre_likability = np.average(genre_likabilities)
             
-            binomial_reward_probability = 0.1
+            binomial_reward_probability = result_genre_likability
             if binomial_reward_probability <= 0:
                 #print("User={}, item={}, genre likability={}".format(user_id, item_id, result_genre_likability))
                 binomial_reward_probability = MIN_PROBABILITY # this could be replaced by small probability

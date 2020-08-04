@@ -33,9 +33,10 @@ class LinUCB:
             self.num_queries=996         # number of articles
             
         elif self.type=="sampling":
-            self.num_articles=300         # number of queries
-            self.arm_feature_dim=325   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
-            self.num_queries=891         # number of articles
+            
+            self.num_articles=321         # number of queries
+            self.arm_feature_dim=321  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
+            self.num_queries=296         # number of articles
             
         else:
             self.num_articles=25         # number of queries
@@ -86,6 +87,7 @@ class LinUCB:
         A = self.A
         b = self.b
         arm_features = self.get_features_of_current_arms(t=t)
+        print(arm_features.shape)
         p_t = np.zeros(shape=(arm_features.shape[0],), dtype=float)
         p_t -= 9999  # I never want to select the already rated items
         page_ids = unknown_article_ids
@@ -234,16 +236,10 @@ class LinUCB:
         
 #         article_features = self.R[t]   # rating of No.t article x all users
 #         article_features = np.tile(article_features, (self.num_queries, 1))
-
        
         query_features = self.intent_features
-        
-        
-        article_features=self.R[t,:]
-        
-        article_features = np.tile(article_features, (self.num_queries, 1))
-#         print(query_features.shape)
-#         print(article_features.shape)
+        query_featuers = np.tile(query_feautres, (self.num_articles,1))
+        article_features=self.page_pca_features
         arm_features = np.concatenate((query_features, article_features), axis=1)
         return arm_features    
     
@@ -272,7 +268,7 @@ class LinUCB:
             page_features = pickle.load(open('data/sample_by_question_page_features.pkl','rb'))            
             
             features = np.zeros(shape=(self.num_articles, 768), dtype=float)
-            titles = np.empty(shape=(self.num_queries,), dtype=object)
+            titles = np.empty(shape=(self.num_articles,), dtype=object)
             
             for k,v in page_id.items():
                 titles[v]=k
@@ -484,4 +480,24 @@ class LinUCB:
 #             pass
         
         return s
+    
+    
+    
+#     def load_heldout_data(self):
+#         heldout_question_id = pickle.load(open('data/heldout_by_question_questions_dict.pkl','rb'))
+#         heldout_question_features = pickle.load(open('data/heldout_by_question_questions_features.pkl','rb'))
+#         heldout_question_intent_features = pickle.load(open('data/heldout_by_question_query_intents.pkl','rb'))
+        
+        
+#         self.heldout_num_queries=len(heldout_question_id)
+        
             
+#     def make_prediction(self):
+#         A = self.A
+#         b = self.b          
+            
+            
+#         query_ids = range(self.num_queries)
+#         page_ids = range(self.num_articles)
+        
+#         allscores=np.zeros((self.num_queries,self.num_articles))            

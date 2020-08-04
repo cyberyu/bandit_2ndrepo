@@ -66,7 +66,7 @@ class LinUCB:
         self.d = self.arm_feature_dim
         self.b = np.zeros(shape=(self.num_queries, self.d))
         self.query_titles, self.query_embeddings, self.intent_features =self._get_query_info()
-        self.article_titles, self.article_embeddings =self._get_article_info()
+        self.article_titles, self.article_pca_features =self._get_article_info()
 
         # More efficient way to create array of identity matrices of length num_items
         print("\nInitializing matrix A of shape {} which will require {}MB of memory."
@@ -234,12 +234,10 @@ class LinUCB:
         # so for our get arm function, it should concatenate a single page_feature (historical clicks of queries) with queries features (embeddings)
         t = t % self.num_queries
         
-#         article_features = self.R[t]   # rating of No.t article x all users
-#         article_features = np.tile(article_features, (self.num_queries, 1))
-       
+
         query_features = self.intent_features
         query_featuers = np.tile(query_feautres, (self.num_articles,1))
-        article_features=self.page_pca_features
+        article_features=self.article_pca_features
         arm_features = np.concatenate((query_features, article_features), axis=1)
         return arm_features    
     
@@ -248,37 +246,49 @@ class LinUCB:
         if self.type=='1st_intent':
             page_id = pickle.load(open('data/infowave_25_1stintent_dict.pkl','rb'))
             page_features = pickle.load(open('data/infowave_25_1stintent_title.pkl','rb'))
+            page_pca_features = pickle.load(open('data/infowave_allintents_title.pkl','rb'))
 
             features = np.zeros(shape=(self.num_articles, 768), dtype=float)
+            pca_features = np.zeros(shape=(self.num_articles, 5), dtype=float)
             titles = np.empty(shape=(self.num_queries,), dtype=object)
+            
+            all_pca_features = np.concatenate([v for k,v in page_pca_features.items()], 0)
+            pca = PCA(n_components=5)
+            pca.fit_transform(all_pca_features)            
 
             for k,v in page_id.items():
                 titles[v]=k
 
                 # average multiple sentences 
                 # print(question_features[k].shape[0],question_features[k].shape[1])
-                if (page_features[k].shape[0]!=1) & (page_features[k].shape[1]==768):
-                    features[v,:]=np.average(page_features[k],axis=0)
+                if (pca[v].shape[0]!=1) & (pca[v].shape[1]==5):
+                    features[v,:]=np.average(pca[v],axis=0)
                 else:
-                    features[v,:]=page_features[k]    
+                    features[v,:]=pca[v]    
                     
         else: 
         #self.type=="sampling":
             page_id = pickle.load(open('data/sample_by_question_page_dict.pkl','rb'))
-            page_features = pickle.load(open('data/sample_by_question_page_features.pkl','rb'))            
+            page_features = pickle.load(open('data/sample_by_question_page_features.pkl','rb')) 
+            page_pca_features = pickle.load(open('data/infowave_allintents_title.pkl','rb'))
             
             features = np.zeros(shape=(self.num_articles, 768), dtype=float)
             titles = np.empty(shape=(self.num_articles,), dtype=object)
+            pca_features = np.zeros(shape=(self.num_articles, 5), dtype=float)
+            
+            all_pca_features = np.concatenate([v for k,v in page_pca_features.items()], 0)
+            pca = PCA(n_components=5)
+            pca.fit_transform(all_pca_features) 
             
             for k,v in page_id.items():
                 titles[v]=k
 
                 # average multiple sentences 
                 # print(question_features[k].shape[0],question_features[k].shape[1])
-                if (page_features[k].shape[0]!=1) & (page_features[k].shape[1]==768):
-                    features[v,:]=np.average(page_features[k],axis=0)
+                if (pca[v].shape[0]!=1) & (pca[v].shape[1]==768):
+                    features[v,:]=np.average(pca[v],axis=0)
                 else:
-                    features[v,:]=page_features[k]    
+                    features[v,:]=pca[v]    
                     
                     
         return titles, features    

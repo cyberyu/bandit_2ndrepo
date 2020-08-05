@@ -35,7 +35,7 @@ class LinUCB:
         elif self.type=="sampling":
             
             self.num_articles=321         # number of queries
-            self.arm_feature_dim=321  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
+            self.arm_feature_dim=30  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
             self.num_queries=296         # number of articles
             
         else:
@@ -64,7 +64,7 @@ class LinUCB:
         
         self.allow_selecting_known_arms = allow_selecting_known_arms
         self.d = self.arm_feature_dim
-        self.b = np.zeros(shape=(self.num_queries, self.d))
+        self.b = np.zeros(shape=(self.num_articles, self.d))
         self.query_titles, self.query_embeddings, self.intent_features =self._get_query_info()
         self.article_titles, self.article_pca_features =self._get_article_info()
 
@@ -87,7 +87,7 @@ class LinUCB:
         A = self.A
         b = self.b
         arm_features = self.get_features_of_current_arms(t=t)
-        print(arm_features.shape)
+        #print(arm_features.shape)
         p_t = np.zeros(shape=(arm_features.shape[0],), dtype=float)
         p_t -= 9999  # I never want to select the already rated items
         page_ids = unknown_article_ids
@@ -235,8 +235,8 @@ class LinUCB:
         t = t % self.num_queries
         
 
-        query_features = self.intent_features
-        query_featuers = np.tile(query_feautres, (self.num_articles,1))
+        query_features = self.intent_features[t,:]
+        query_features = np.tile(query_features, (self.num_articles,1))
         article_features=self.article_pca_features
         arm_features = np.concatenate((query_features, article_features), axis=1)
         return arm_features    
@@ -261,10 +261,10 @@ class LinUCB:
 
                 # average multiple sentences 
                 # print(question_features[k].shape[0],question_features[k].shape[1])
-                if (pca[v].shape[0]!=1) & (pca[v].shape[1]==5):
-                    features[v,:]=np.average(pca[v],axis=0)
+                if (pca[v,:].shape[0]!=1) & (pca[v,:].shape[1]==5):
+                    features[v,:]=np.average(pca[v,:],axis=0)
                 else:
-                    features[v,:]=pca[v]    
+                    features[v,:]=pca[v,:]    
                     
         else: 
         #self.type=="sampling":
@@ -278,26 +278,28 @@ class LinUCB:
             
             all_pca_features = np.concatenate([v for k,v in page_pca_features.items()], 0)
             pca = PCA(n_components=5)
-            pca.fit_transform(all_pca_features) 
+            pca.fit_transform(all_pca_features)
+            X_pca = pca.transform(all_pca_features)
             
             for k,v in page_id.items():
                 titles[v]=k
+                pca_features[v,:]=X_pca[v,:]  
 
-                # average multiple sentences 
-                # print(question_features[k].shape[0],question_features[k].shape[1])
-                if (pca[v].shape[0]!=1) & (pca[v].shape[1]==768):
-                    features[v,:]=np.average(pca[v],axis=0)
-                else:
-                    features[v,:]=pca[v]    
+#                 # average multiple sentences 
+#                 # print(question_features[k].shape[0],question_features[k].shape[1])
+#                 if (X_pca[v,:].shape[0]!=1) & (X_pca[v,:].shape[1]==768):
+#                     features[v,:]=np.average(X_pca[v,:],axis=0)
+#                 else:
+#                     features[v,:]=X_pca[v,:]    
                     
                     
-        return titles, features    
+        return titles, pca_features    
     
 
     def get_featuers_of_new_query_oos(self, queryid):
         
         query_features = self.intent_features[queryid,]
-        article_features=self.R[queryid,:]
+        article_features=self.article_pca_features[queryid,:]
         
         
         arm_features = np.concatenate((query_features, article_features), axis=0)
@@ -391,14 +393,13 @@ class LinUCB:
         else:
             
             # the goal is to update a missing ""
-            current_page_features = self.R[:,page_id].T  #get the article features
+            current_page_features = self.article_pca_features[page_id,:] #get the article features
             current_query_features = self.intent_features[query_id,:]  #get the article features
             
             # find out for a page, what query is rated as relevant (which for new query should be none)
             query_ratings = self.R[:,page_id]  #get all ratings by article id, it is a column
             query_pos_rat_idxs = np.argwhere(query_ratings == self.POSITIVE_RATING_VAL).flatten() # get all other positive ratings of the same article
             num_known_ratings = len(query_pos_rat_idxs)  # length of all other positive ratings
-            
             
             match_likabilities=[]
             
@@ -407,8 +408,6 @@ class LinUCB:
 #                 print(current_query_features.shape)
 #                 print(self.query_embeddings[query_idx].shape)
                 match_likabilities.append(cosine_similarity(current_query_features.reshape(-1,1), self.intent_features[query_idx].reshape(-1,1)))
-    
-            
             
             result_match_likability = np.average(match_likabilities)
             
@@ -502,12 +501,34 @@ class LinUCB:
 #         self.heldout_num_queries=len(heldout_question_id)
         
             
-#     def make_prediction(self):
-#         A = self.A
-#         b = self.b          
+    def make_prediction():
+        A = ucb.A
+        b = ucb.b          
             
             
-#         query_ids = range(self.num_queries)
-#         page_ids = range(self.num_articles)
+        query_ids = range(ucb.num_queries)
+        page_ids = range(ucb.num_articles)
         
-#         allscores=np.zeros((self.num_queries,self.num_articles))            
+        
+        allscores=np.zeros((self.num_queries,self.num_articles))            
+        
+        for j in page_ids:
+            for i in query_ids:
+                # get the arm features given page id, and a query embeddings
+                # though here I all queries are insample, I still use this out-of-sample arm function so it 
+                # can be applied on held-out query data sets for validation in the future
+                arm_features = ucb.get_featuers_of_new_query_oos(i)
+                
+                x_ta = arm_features.reshape(-1, 1)  # make a column vector
+                
+                A_a_inv = np.linalg.inv(A[j])
+                theta_a = A_a_inv.dot(b[j])
+                score_a = theta_a.T.dot(x_ta)
+                allscores[i,j]=score_a  
+        
+        
+        p_i = []
+        for i in query_ids:
+            p_i.append(np.argmax(allscores[i,:]))
+            
+        return p_i

@@ -35,7 +35,7 @@ class LinUCB:
         elif self.type=="sampling":
             
             self.num_articles=321         # number of queries
-            self.arm_feature_dim=325  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
+            self.arm_feature_dim=30  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
             self.num_queries=296         # number of articles
             
         else:
@@ -66,7 +66,7 @@ class LinUCB:
         self.d = self.arm_feature_dim
         self.b = np.zeros(shape=(self.num_articles, self.d))
         self.query_titles, self.query_embeddings, self.intent_features =self._get_query_info()
-        self.article_titles, self.article_bow_features =self._get_article_info()
+        self.article_titles, self.article_pca_features =self._get_article_info()
 
         # More efficient way to create array of identity matrices of length num_items
         print("\nInitializing matrix A of shape {} which will require {}MB of memory."
@@ -237,7 +237,7 @@ class LinUCB:
 
         query_features = self.intent_features[t,:]
         query_features = np.tile(query_features, (self.num_articles,1))
-        article_features=self.article_bow_features
+        article_features=self.article_pca_features
         arm_features = np.concatenate((query_features, article_features), axis=1)
         return arm_features    
     
@@ -284,15 +284,15 @@ class LinUCB:
             pca_features = np.zeros(shape=(self.num_articles, 5), dtype=float)
             bow_features = np.zeros(shape=(self.num_articles, 300), dtype=float)
             
-#             all_pca_features = np.concatenate([v for k,v in page_pca_features.items()], 0)
-#             pca = PCA(n_components=5)
-#             pca.fit_transform(all_pca_features)
-#             X_pca = pca.transform(all_pca_features)
+            all_pca_features = np.concatenate([v for k,v in page_pca_features.items()], 0)
+            pca = PCA(n_components=5)
+            pca.fit_transform(all_pca_features)
+            X_pca = pca.transform(all_pca_features)
             
             for k,v in page_id.items():
                 titles[v]=k
-                #pca_features[v,:]=X_pca[v,:]  
-                bow_features[v,:] =page_bow_features[v,:].toarray()
+                pca_features[v,:]=X_pca[v,:]  
+#                 bow_features[v,:] =page_bow_features[v,:].toarray()
 
 #                 # average multiple sentences 
 #                 # print(question_features[k].shape[0],question_features[k].shape[1])
@@ -302,13 +302,13 @@ class LinUCB:
 #                     features[v,:]=X_pca[v,:]    
                     
                     
-        return titles, bow_features    
+        return titles, pca_features    
     
 
     def get_featuers_of_new_query_oos(self, queryid, articleid):
         
         query_features = self.intent_features[queryid,]
-        article_features=self.article_bow_features[articleid,:]
+        article_features=self.article_pca_features[articleid,:]
         
         
         arm_features = np.concatenate((query_features, article_features), axis=0)
@@ -402,7 +402,7 @@ class LinUCB:
         else:
             
             # the goal is to update a missing ""
-            current_page_features = self.article_bow_features[page_id,:] #get the article features
+            current_page_features = self.article_pca_features[page_id,:] #get the article features
             current_query_features = self.intent_features[query_id,:]  #get the article features
             
             # find out for a page, what query is rated as relevant (which for new query should be none)

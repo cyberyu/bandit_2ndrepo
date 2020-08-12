@@ -36,7 +36,7 @@ class LinUCB:
             
             self.num_articles=321         # number of queries
             self.arm_feature_dim=30  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
-            self.num_queries=296         # number of articles
+            self.num_queries=300         # number of articles
             
         else:
             self.num_articles=25         # number of queries

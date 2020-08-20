@@ -35,29 +35,27 @@ class LinUCB:
         elif self.type=="sampling":
             
             self.num_articles=321         # number of queries
-            self.arm_feature_dim=305  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
-            #self.num_queries=300         # number of articles
+            self.arm_feature_dim=30  # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
+            self.num_queries=600         # number of articles
             
         else:
             self.num_articles=25         # number of queries
             self.arm_feature_dim=793   # the dimensionality of arm features (query features (768) + page featuers (*number of query ratings))
             self.num_queries=41         # number of articles
 
+        #dataarray = pickle.load(open('dataarray.pkl','rb'))
+        self.R=np.zeros((self.num_queries,self.num_articles))  # load the correct query-article mappings for intent 1
 
         
         if self.type=="allintents":
             ratings = pickle.load(open('./data/all_question_article_ratings.pkl','rb'))
         elif self.type=="sampling":    
-            ratings = pickle.load(open('./data/Y_train_labels.pkl','rb'))
+            ratings = pickle.load(open('./data/sample_by_question_questions_article_ratings.pkl','rb'))
         else:    
             ratings = pickle.load(open('./data/question_article_ratings.pkl','rb'))
-
-        self.intent_features =self._get_query_info()
-        self.article_pca_features =self._get_article_info()
-        
-        #dataarray = pickle.load(open('dataarray.pkl','rb'))
-        #self.R=np.zeros((self.num_queries,self.num_articles))  # load the correct query-article mappings for intent 1
-        self.R=ratings
+            
+        for i,j in ratings:
+            self.R[i,j]=1
         
         self.oldR = copy.deepcopy(self.R)
         self.users_with_unrated_items = np.array(range(self.num_articles))  # number of unrated items.
@@ -67,7 +65,8 @@ class LinUCB:
         self.allow_selecting_known_arms = allow_selecting_known_arms
         self.d = self.arm_feature_dim
         self.b = np.zeros(shape=(self.num_articles, self.d))
-
+        self.query_titles, self.query_embeddings, self.intent_features =self._get_query_info()
+        self.article_titles, self.article_pca_features =self._get_article_info()
 
         # More efficient way to create array of identity matrices of length num_items
         print("\nInitializing matrix A of shape {} which will require {}MB of memory."
@@ -88,7 +87,7 @@ class LinUCB:
         A = self.A
         b = self.b
         arm_features = self.get_features_of_current_arms(t=t)
-        #print(arm_features.shape)
+        print(arm_features.shape)
         p_t = np.zeros(shape=(arm_features.shape[0],), dtype=float)
         p_t -= 9999  # I never want to select the already rated items
         page_ids = unknown_article_ids
@@ -96,7 +95,8 @@ class LinUCB:
         if self.allow_selecting_known_arms:
             page_ids = range(self.num_articles)
             p_t += 9999
-
+        
+        print(len(page_ids))
         for a in page_ids:  # iterate over all arms, which are pages
             x_ta = arm_features[a].reshape(arm_features[a].shape[0], 1)  # make a column vector
             A_a_inv = np.linalg.inv(A[a])
@@ -239,8 +239,6 @@ class LinUCB:
         query_features = self.intent_features[t,:]
         query_features = np.tile(query_features, (self.num_articles,1))
         article_features=self.article_pca_features
-#         print(query_features.shape)
-#         print(article_features.shape)
         arm_features = np.concatenate((query_features, article_features), axis=1)
         return arm_features    
     
@@ -276,43 +274,43 @@ class LinUCB:
                     features[v,:]=pca[v,:]                     
                     
         else: 
-            pca_features=pickle.load(open('data/X_all_page_pca_features.pkl','rb'))
-#         #self.type=="sampling":
-#             page_id = pickle.load(open('data/sample_by_question_page_dict.pkl','rb'))
-#             page_features = pickle.load(open('data/sample_by_question_page_features.pkl','rb')) 
-#             page_pca_features = pickle.load(open('data/infowave_allintents_title.pkl','rb'))
-#             page_bow_features = pickle.load(open('data/infowave_tfidf_bow.pickle','rb'))
+        #self.type=="sampling":
+            page_id = pickle.load(open('data/sample_by_question_page_dict.pkl','rb'))
+            page_features = pickle.load(open('data/sample_by_question_page_features.pkl','rb')) 
+            page_pca_features = pickle.load(open('data/infowave_allintents_title.pkl','rb'))
+            page_bow_features = pickle.load(open('data/infowave_tfidf_bow.pickle','rb'))
             
-#             features = np.zeros(shape=(self.num_articles, 768), dtype=float)
-#             titles = np.empty(shape=(self.num_articles,), dtype=object)
-#             pca_features = np.zeros(shape=(self.num_articles, 5), dtype=float)
-#             bow_features = np.zeros(shape=(self.num_articles, 300), dtype=float)
+            features = np.zeros(shape=(self.num_articles, 768), dtype=float)
+            titles = np.empty(shape=(self.num_articles,), dtype=object)
+            pca_features = np.zeros(shape=(self.num_articles, 5), dtype=float)
+            bow_features = np.zeros(shape=(self.num_articles, 300), dtype=float)
             
-#             all_pca_features = np.concatenate([v for k,v in page_pca_features.items()], 0)
-#             pca = PCA(n_components=5)
-#             pca.fit_transform(all_pca_features)
-#             X_pca = pca.transform(all_pca_features)
+            all_pca_features = np.concatenate([v for k,v in page_pca_features.items()], 0)
+            pca = PCA(n_components=5)
+            pca.fit_transform(all_pca_features)
+            X_pca = pca.transform(all_pca_features)
             
-#             for k,v in page_id.items():
-#                 titles[v]=k
-#                 pca_features[v,:]=X_pca[v,:]  
-# #                 bow_features[v,:] =page_bow_features[v,:].toarray()
+            for k,v in page_id.items():
+                titles[v]=k
+                pca_features[v,:]=X_pca[v,:]  
+#                 bow_features[v,:] =page_bow_features[v,:].toarray()
 
-# #                 # average multiple sentences 
-# #                 # print(question_features[k].shape[0],question_features[k].shape[1])
-# #                 if (X_pca[v,:].shape[0]!=1) & (X_pca[v,:].shape[1]==768):
-# #                     features[v,:]=np.average(X_pca[v,:],axis=0)
-# #                 else:
-# #                     features[v,:]=X_pca[v,:]    
+#                 # average multiple sentences 
+#                 # print(question_features[k].shape[0],question_features[k].shape[1])
+#                 if (X_pca[v,:].shape[0]!=1) & (X_pca[v,:].shape[1]==768):
+#                     features[v,:]=np.average(X_pca[v,:],axis=0)
+#                 else:
+#                     features[v,:]=X_pca[v,:]    
                     
                     
-        return pca_features    
+        return titles, pca_features    
     
 
     def get_featuers_of_new_query_oos(self, queryid, articleid):
         
         query_features = self.intent_features[queryid,]
         article_features=self.article_pca_features[articleid,:]
+        
         
         arm_features = np.concatenate((query_features, article_features), axis=0)
         
@@ -340,32 +338,29 @@ class LinUCB:
                     features[v,:]=question_features[k]
                     
         elif self.type=="sampling":   
-#             question_id = pickle.load(open('data/sample_by_question_questions_dict.pkl','rb'))
-#             question_features = pickle.load(open('data/sample_by_question_questions_features.pkl','rb'))
-#             question_intent_features = pickle.load(open('data/sample_by_question_query_intents.pkl','rb'))
+            question_id = pickle.load(open('data/sample_by_question_questions_dict.pkl','rb'))
+            question_features = pickle.load(open('data/sample_by_question_questions_features.pkl','rb'))
+            question_intent_features = pickle.load(open('data/sample_by_question_query_intents.pkl','rb'))
             
-#             
-#             features = np.zeros(shape=(self.num_queries, 768), dtype=float)
-#             titles = np.empty(shape=(self.num_queries,), dtype=object)
-#             intent_features = np.zeros(shape=(self.num_queries,25), dtype=float)
+            features = np.zeros(shape=(self.num_queries, 768), dtype=float)
+            titles = np.empty(shape=(self.num_queries,), dtype=object)
+            intent_features = np.zeros(shape=(self.num_queries,25), dtype=float)
             
-#             for k,v in question_id.items():
-#                 #k is the question text,  v is the incremental ID
-#                 titles[v]=k
+            for k,v in question_id.items():
+                #k is the question text,  v is the incremental ID
+                titles[v]=k
 
-#                 # average multiple sentences 
-#                 # print(question_features[k].shape[0],question_features[k].shape[1])
-#                 #print(question_features[k].shape)
+                # average multiple sentences 
+                # print(question_features[k].shape[0],question_features[k].shape[1])
+                #print(question_features[k].shape)
                 
-#                 if (question_features[k].shape[0]!=768):
-#                     features[v,:]=np.average(question_features[k],axis=0)
-#                 else:
-#                     features[v,:]=question_features[k]
+                if (question_features[k].shape[0]!=768):
+                    features[v,:]=np.average(question_features[k],axis=0)
+                else:
+                    features[v,:]=question_features[k]
 
-#                 intent_features[v,:]=question_intent_features[v] 
-                
-            intent_features=pickle.load(open('data/X_train_bow_features.pkl','rb'))
-            self.num_queries = len(intent_features)
+                intent_features[v,:]=question_intent_features[v]    
+            #intent_features=intent_features.reshape(-1,1)
         else:   # for all intents     
             
             question_id = pickle.load(open('data/all_questions_dict.pkl','rb'))
@@ -377,7 +372,7 @@ class LinUCB:
             
             for k,v in question_id.items():
                 #k is the question text,  v is the incremental ID
-                titles[v]=kp
+                titles[v]=k
 
                 # average multiple sentences 
                 # print(question_features[k].shape[0],question_features[k].shape[1])
@@ -388,7 +383,7 @@ class LinUCB:
                 else:
                     features[v,:]=question_features[k]
             
-        return intent_features 
+        return titles, features, intent_features 
     
 
     def recommend(self, query_id, page_id, fixed_rewards=True, prob_reward_p=0.9):

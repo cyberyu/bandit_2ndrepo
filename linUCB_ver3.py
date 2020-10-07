@@ -87,7 +87,7 @@ class LinUCB:
         A = self.A
         b = self.b
         arm_features = self.get_features_of_current_arms(t=t)
-        print(arm_features.shape)
+        #print(arm_features.shape)
         p_t = np.zeros(shape=(arm_features.shape[0],), dtype=float)
         p_t -= 9999  # I never want to select the already rated items
         page_ids = unknown_article_ids
@@ -96,7 +96,7 @@ class LinUCB:
             page_ids = range(self.num_articles)
             p_t += 9999
         
-        print(len(page_ids))
+        #print(len(page_ids))
         for a in page_ids:  # iterate over all arms, which are pages
             x_ta = arm_features[a].reshape(arm_features[a].shape[0], 1)  # make a column vector
             A_a_inv = np.linalg.inv(A[a])

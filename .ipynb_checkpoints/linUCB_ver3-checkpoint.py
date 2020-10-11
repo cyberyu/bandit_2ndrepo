@@ -112,13 +112,16 @@ class LinUCB:
         max_idxs = np.argwhere(p_t == max_p_t).flatten()
         a_t = np.random.choice(max_idxs)  # idx of article to recommend to query t
 
+        print('a_t is ', a_t)
         # observed reward = 1/0
-        r_t = self.recommend(query_id=t, page_id=a_t, fixed_rewards=self.fixed_rewards, prob_reward_p=self.prob_reward_p)
+        r_t = self.recommend2(query_id=t, page_id=a_t, fixed_rewards=self.fixed_rewards, prob_reward_p=self.prob_reward_p)
 
         if verbosity >= 2:
             print("Query {} choosing item {} with p_t={} reward {}".format(t, a_t, p_t[a_t], r_t))
 
         x_t_at = arm_features[a_t].reshape(arm_features[a_t].shape[0], 1)  # make a column vector
+        
+        
         A[a_t] = A[a_t] + x_t_at.dot(x_t_at.T)
         b[a_t] = b[a_t] + r_t * x_t_at.flatten()  # turn it back into an array because b[a_t] is an array
 
@@ -385,6 +388,9 @@ class LinUCB:
             
         return titles, features, intent_features 
     
+    
+    def recommend2(self, query_id, page_id, fixed_rewards=True, prob_reward_p=0.9):
+        return np.random.binomial(n=1, p=0.2)   
 
     def recommend(self, query_id, page_id, fixed_rewards=True, prob_reward_p=0.9):
         """

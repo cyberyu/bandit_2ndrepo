@@ -91,56 +91,53 @@ def recommend(query_id, page_id, ratings, fixed_rewards=True, prob_reward_p=0.9,
 #run the graph
 
 t0 = time.time()
-with tf.Session() as sess:
-    X_query, X_page = initialize_arm_features(query_features, page_features)
-    
-    #p_t = tf.Variable(tf.zeros([321,]), dtype=tf.float32, name="p_t")    
-    tf.global_variables_initializer().run()
-    #print the random values that we sample
+#with tf.Session() as sess:
+X_query, X_page = initialize_arm_features(query_features, page_features)
 
-    
-    
-    for q_id in tf.range(600):
-        axt = []
-        for a in tf.range(321):
-            x_ta = get_arm_features(q_id,a)
-            A_new = A[a,:]
-            b_new = b[a,:]
-            theta_a = tf.squeeze(tf.linalg.solve(tf.eye(num_arm_features) + A_new, tf.expand_dims(b_new, axis=-1)),axis=-1)
-            g_t_a = tf.squeeze(tf.linalg.solve(tf.eye(num_arm_features)+A_new, tf.expand_dims(x_ta, axis=-1)), axis=-1)
-            #n_p = tf.add(tf.tensordot(theta_a, x_ta, (0,0)),tf.tensordot(alpha, tf.sqrt(tf.tensordot(x_ta, g_t_a, (0,0))),(0,0)))
+#p_t = tf.Variable(tf.zeros([321,]), dtype=tf.float32, name="p_t")    
 
-            temp=tf.math.add(tf.tensordot(theta_a, x_ta,(0,0)),tf.sqrt(tf.tensordot(x_ta, g_t_a, (0,0))))
-            axt.append(temp)
-    #         print(type(n_p))
-    #         print(sess.run(n_p))
-           #(n_p).eval()
-        p_t = tf.stack(axt)
-        #print(sess.run(p_t))
-        
-        print(p_t)
-        max_p_t=tf.argmax(p_t, axis=0).eval()
-        #print(max_p_t)
+#print the random values that we sample
 
-        # need to add tile breaking
-        a_t = max_p_t
+#tf.global_variables_initializer().run()
 
+for q_id in tf.range(600):
+    axt = []
+    for a in tf.range(321):
+        x_ta = get_arm_features(q_id,a)
+        A_new = A[a,:]
+        b_new = b[a,:]
+        theta_a = tf.squeeze(tf.linalg.solve(tf.eye(num_arm_features) + A_new, tf.expand_dims(b_new, axis=-1)),axis=-1)
+        g_t_a = tf.squeeze(tf.linalg.solve(tf.eye(num_arm_features)+A_new, tf.expand_dims(x_ta, axis=-1)), axis=-1)
+        #n_p = tf.add(tf.tensordot(theta_a, x_ta, (0,0)),tf.tensordot(alpha, tf.sqrt(tf.tensordot(x_ta, g_t_a, (0,0))),(0,0)))
 
-        r_t = recommend(query_id=q_id, page_id=a_t, ratings=ratings)
+        temp=tf.math.add(tf.tensordot(theta_a, x_ta,(0,0)),tf.sqrt(tf.tensordot(x_ta, g_t_a, (0,0))))
+        axt.append(temp)
+#         print(type(n_p))
+#         print(sess.run(n_p))
+       #(n_p).eval()
+    p_t = tf.stack(axt)
+    #print(sess.run(p_t))
 
+    print(p_t)
+    max_p_t=tf.argmax(p_t, axis=0)
+    #print(max_p_t)
 
+    # need to add tile breaking
+    a_t = max_p_t
 
-        x_t_at = get_arm_features(0,a_t) 
-        A_a_t = A[a_t,:]
-        A_a_t_new = tf.add(A_a_t, tf.tensordot(x_t_at, x_t_at,(0,0)))
-        b_a_t_new = tf.add(b[a_t],r_t*x_t_at)
-    #     print(sess.run(A_a_t_new))
-    #     print(A_a_t_new)
-        tf.compat.v1.scatter_nd_update(A,[a_t],A_a_t_new)
-    #     tf.compat.v1.scatter_nd_update()
-    #     A[a_t].assign(A_a_t_new).eval()
-        tf.compat.v1.scatter_nd_update(b,[a_t],b_a_t_new)
-        #b[a_t] = b[a_t] + r_t * x_t_at.flatten()  # turn it back into an array because b[a_t] is an array
+    r_t = recommend(query_id=q_id, page_id=a_t, ratings=ratings)
+
+    x_t_at = get_arm_features(0,a_t) 
+    A_a_t = A[a_t,:]
+    A_a_t_new = tf.add(A_a_t, tf.tensordot(x_t_at, x_t_at,(0,0)))
+    b_a_t_new = tf.add(b[a_t],r_t*x_t_at)
+#     print(sess.run(A_a_t_new))
+#     print(A_a_t_new)
+    tf.compat.v1.scatter_nd_update(A,[a_t],A_a_t_new)
+#     tf.compat.v1.scatter_nd_update()
+#     A[a_t].assign(A_a_t_new).eval()
+    tf.compat.v1.scatter_nd_update(b,[a_t],b_a_t_new)
+    #b[a_t] = b[a_t] + r_t * x_t_at.flatten()  # turn it back into an array because b[a_t] is an array
         
 t1 = time.time()
 

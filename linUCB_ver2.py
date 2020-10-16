@@ -9,6 +9,14 @@ import copy
 import math
 
 class LinUCB:
+    
+    def save_variable(self, contents, filename):
+    #     tf.io.write_file(
+    #         filename, contents, name=None
+    #     )
+        np.savetxt(filename, contents, delimiter=",", fmt='%1.2f')
+        return None
+
     def __init__(self, alpha, max_items=500, allow_selecting_known_arms=True, fixed_rewards=True,
                  prob_reward_p=0.9):
         
@@ -74,11 +82,12 @@ class LinUCB:
         print("\nLinUCB successfully initialized.")
     
     #  input para (query_id, unknown_article_ids, verbosity)
-    def choose_arm(self, t, unknown_article_ids, verbosity):
+    def choose_arm(self, t, unknown_article_ids, verbosity, step):
         """
         Choose an arm to pull = query to matched to infowavepage t that it has not been matched yet.
         :param t: page_id for queries to matched to.
         :param unknown_item_ids: Indexes of query ids that page t has not rated yet.
+        :param step: id of the query, used for CPU to GPU transform
         :return: Received reward for matched query = 1/0 = page actually matched/unmatched query.
         """
         A = self.A
@@ -93,21 +102,41 @@ class LinUCB:
             page_ids = range(self.num_articles)
             p_t += 9999
 
+            
         for a in page_ids:  # iterate over all arms, which are pages
+                
             x_ta = arm_features[a].reshape(arm_features[a].shape[0], 1)  # make a column vector
             A_a_inv = np.linalg.inv(A[a])
+            g_t_a=A_a_inv.dot(x_ta)
             theta_a = A_a_inv.dot(b[a])
-            p_t[a] = theta_a.T.dot(x_ta) + self.alpha * np.sqrt(x_ta.T.dot(A_a_inv).dot(x_ta))
-
+            temp = theta_a.T.dot(x_ta) + self.alpha * np.sqrt(x_ta.T.dot(A_a_inv).dot(x_ta))
+            p_t[a] = temp
+            
+#             # print the first element
+#             if ((a in [0,1,2]) and (step in [0,1,2])):
+#                 self.save_variable(x_ta, './tmp/x_ta_cpu_query_'+str(step)+'_page_'+str(a)+'.csv')
+#                 self.save_variable(A_a_inv, './tmp/A_a_inv_cpu_query_'+str(step)+'_page_'+str(a)+'.csv')
+#                 self.save_variable(g_t_a, './tmp/g_t_a_cpu_query_'+str(step)+'_page_'+str(a)+'.csv')
+#                 self.save_variable(theta_a, './tmp/theta_a_cpu_query_'+str(step)+'_page_'+str(a)+'.csv')
+#                 self.save_variable(temp, './tmp/p_t_a_cpu_query_'+str(step)+'_page_'+str(a)+'.csv')
+                
+#                 print('x_ta is', x_ta)
+#                 print('A_a_inv is', A_a_inv)
+#                 print('theta_a is', theta_a)
+#                 print('p_t is ', temp)
+                
+        # save all p_t_a to the file to compare the gpu solution
+        self.save_variable(p_t, './tmp/p_t_a_cpu_query_'+str(step)+'_allpages.csv')        
         max_p_t = np.max(p_t)
         if max_p_t <= 0:
             print("Page {} has max p_t={}, p_t={}".format(t, max_p_t, p_t))
-
+        
         # I want to randomly break ties, np.argmax return the first occurence of maximum.
         # So I will get all occurences of the max and randomly select between them
         max_idxs = np.argwhere(p_t == max_p_t).flatten()
         a_t = np.random.choice(max_idxs)  # idx of article to recommend to query t
-
+        
+        print('the updated a_t among all arms is', a_t)
         # observed reward = 1/0
         r_t = self.recommend(query_id=t, page_id=a_t, fixed_rewards=self.fixed_rewards, prob_reward_p=self.prob_reward_p)
 
@@ -117,7 +146,10 @@ class LinUCB:
         x_t_at = arm_features[a_t].reshape(arm_features[a_t].shape[0], 1)  # make a column vector
         A[a_t] = A[a_t] + x_t_at.dot(x_t_at.T)
         b[a_t] = b[a_t] + r_t * x_t_at.flatten()  # turn it back into an array because b[a_t] is an array
-
+        
+        if step in [0,1,2,3,4]:
+            self.save_variable(b[a_t],'./tmp/b_a_t_cpu_query_'+str(step)+'_page_'+str(a_t)+'.txt')
+        
         return r_t
 
 #     def run_epoch(self, verbosity=2):
@@ -158,6 +190,8 @@ class LinUCB:
 
     
     def run_epoch(self, verbosity=2):
+        
+        global_step=0
         """
         Call choose_arm() for each queries in the dataset.
         :return: Average received reward.
@@ -180,8 +214,11 @@ class LinUCB:
                     self.queries_with_unmatched_pages = self.queries_with_unmatched_pages[
                         self.articles_with_unmatched_queries != query_id]
                     continue
-
-            rewards.append(self.choose_arm(query_id, unknown_page_ids, verbosity))
+            
+            
+            rewards.append(self.choose_arm(query_id, unknown_page_ids, verbosity, global_step))
+            
+            global_step+=1
             time_i = time.time() - start_time_i
             if verbosity >= 2:
                 print("Choosing arm for query {}/{} ended with reward {} in {}s".format(i, self.num_queries,
@@ -190,6 +227,11 @@ class LinUCB:
         total_time = time.time() - start_time
         avg_reward = np.average(np.array(rewards))
         auc_score = self.calculate_auc()
+        
+        
+        # save all A_inv matrices for comparison
+        for index in range(321):
+            self.save_variable(self.A[index], './tmp/Ainv_cpu_page_'+str(index)+'.csv') 
         
         return avg_reward, auc_score, total_time
     
@@ -297,9 +339,11 @@ class LinUCB:
 #                     features[v,:]=np.average(X_pca[v,:],axis=0)
 #                 else:
 #                     features[v,:]=X_pca[v,:]    
+            random_bow_features = pickle.load(open('data/random_tfidf_bow.pkl','rb'))
                     
-                    
-        return titles, bow_features    
+        return titles, random_bow_features                
+        # change to random features to debug
+        #return titles, bow_features    
     
 
     def get_featuers_of_new_query_oos(self, queryid, articleid):
@@ -378,8 +422,13 @@ class LinUCB:
                     features[v,:]=np.average(question_features[k],axis=0)
                 else:
                     features[v,:]=question_features[k]
-            
-        return titles, features, intent_features 
+                    
+                    
+        query_features = pickle.load(open('data/random_by_question_query_intents.pkl','rb'))            
+        return titles, features, query_features 
+    
+        # change to random features to debug            
+        #return titles, features, intent_features 
     
 
     def recommend(self, query_id, page_id, fixed_rewards=True, prob_reward_p=0.9):
@@ -390,51 +439,53 @@ class LinUCB:
         :return: Reward = either 0 or 1.
         """
         MIN_PROBABILITY = 0 # Minimal probability to like an item - adds stochasticity
-
-        if self.R[query_id, page_id] == self.POSITIVE_RATING_VAL:
-            if fixed_rewards:
-                return 1
-            else:
-                return np.random.binomial(n=1, p=prob_reward_p)  # Bernoulli coin toss
-        else:
+        return 0.2
+        #return np.random.binomial(n=1, p=prob_reward_p)
+        
+#         if self.R[query_id, page_id] == self.POSITIVE_RATING_VAL:
+#             if fixed_rewards:
+#                 return 1
+#             else:
+#                 return np.random.binomial(n=1, p=prob_reward_p)  # Bernoulli coin toss
+#         else:
             
-            # the goal is to update a missing ""
-            current_page_features = self.article_bow_features[page_id,:] #get the article features
-            current_query_features = self.intent_features[query_id,:]  #get the article features
+#             # the goal is to update a missing ""
+#             current_page_features = self.article_bow_features[page_id,:] #get the article features
+#             current_query_features = self.intent_features[query_id,:]  #get the article features
             
-            # find out for a page, what query is rated as relevant (which for new query should be none)
-            query_ratings = self.R[:,page_id]  #get all ratings by article id, it is a column
-            query_pos_rat_idxs = np.argwhere(query_ratings == self.POSITIVE_RATING_VAL).flatten() # get all other positive ratings of the same article
-            num_known_ratings = len(query_pos_rat_idxs)  # length of all other positive ratings
+#             # find out for a page, what query is rated as relevant (which for new query should be none)
+#             query_ratings = self.R[:,page_id]  #get all ratings by article id, it is a column
+#             query_pos_rat_idxs = np.argwhere(query_ratings == self.POSITIVE_RATING_VAL).flatten() # get all other positive ratings of the same article
+#             num_known_ratings = len(query_pos_rat_idxs)  # length of all other positive ratings
             
-            match_likabilities=[]
+#             match_likabilities=[]
             
-            for query_idx in query_pos_rat_idxs:
-                # calculate the similarty between query
-#                 print(current_query_features.shape)
-#                 print(self.query_embeddings[query_idx].shape)
-                match_likabilities.append(cosine_similarity(current_query_features.reshape(-1,1), self.intent_features[query_idx].reshape(-1,1)))
+#             for query_idx in query_pos_rat_idxs:
+#                 # calculate the similarty between query
+# #                 print(current_query_features.shape)
+# #                 print(self.query_embeddings[query_idx].shape)
+#                 match_likabilities.append(cosine_similarity(current_query_features.reshape(-1,1), self.intent_features[query_idx].reshape(-1,1)))
             
-            result_match_likability = np.average(match_likabilities)
+#             result_match_likability = np.average(match_likabilities)
             
-            if math.isnan(result_match_likability):
-                result_match_likability=0
+#             if math.isnan(result_match_likability):
+#                 result_match_likability=0
                 
-            binomial_reward_probability = result_match_likability
-            #print (binomial_reward_probability)
-            if binomial_reward_probability <= 0:
-                #print("User={}, item={}, genre likability={}".format(user_id, item_id, result_genre_likability))
-                binomial_reward_probability = MIN_PROBABILITY # this could be replaced by small probability
+#             binomial_reward_probability = result_match_likability
+#             #print (binomial_reward_probability)
+#             if binomial_reward_probability <= 0:
+#                 #print("User={}, item={}, genre likability={}".format(user_id, item_id, result_genre_likability))
+#                 binomial_reward_probability = MIN_PROBABILITY # this could be replaced by small probability
 
-            approx_rating = np.random.binomial(n=1, p=binomial_reward_probability)  # Bernoulli coin toss
+#             approx_rating = np.random.binomial(n=1, p=binomial_reward_probability)  # Bernoulli coin toss
 
-            if approx_rating == 1:
-                self.R[query_id, page_id] = self.POSITIVE_RATING_VAL
-            else:
-                self.R[query_id, page_id] = 0
+#             if approx_rating == 1:
+#                 self.R[query_id, page_id] = self.POSITIVE_RATING_VAL
+#             else:
+#                 self.R[query_id, page_id] = 0
 
-            #return approx_rating
-            return approx_rating
+#             #return approx_rating
+#             return approx_rating
         
     def remove_random_ratings(self, num_to_each_query=5):
         """
